@@ -34,7 +34,7 @@ There are no specific external dependencies for this script.
 
 2. **Run Script:**
     ```bash
-    bash script_name.sh
+    bash UnixHmwk.sh
     ```
 
 3. **Check Output:**
@@ -46,5 +46,4 @@ There are no specific external dependencies for this script.
 ## Notes
 - Ensure you have the necessary permissions to execute the script.
 - The script assumes a Unix environment.
-
-**Script execution completed successfully!**
+- If operating on a Super Computer additional information must be given in #SBATCH commands
