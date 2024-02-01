@@ -15,6 +15,7 @@ February 1, 2024
 This script automates the process of downloading secondary assemblies for human chromosome 1 from the UCSC Genome Browser, extracting information, and creating a summary file. Professor seeks to give students experience with the following: navigating the command line, managing files and directories, downloading data, manipulating text, and using a Unix text editor.
 
 ## Files
+No input file, but this script will download files from the UCSC Genome Browser
 
 ### Script
 - [UnixHmwk.sh](UnixHmwk.sh): The main Unix shell script.
