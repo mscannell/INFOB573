@@ -1,0 +1,132 @@
+# Load necessary packages
+library(dplyr)
+library(tibble)
+library(ggplot2)
+
+# Load gene expression data, gene information, and sample information
+gene_expression <- readxl::read_excel('/Users/mscannel/Downloads/Gene_Expression_Data.xlsx')
+gene_info <- read.csv('/Users/mscannel/Downloads/Gene_Information.csv')
+sample_info <- read.csv('/Users/mscannel/Downloads/Sample_Information.csv')
+
+# Merge the three datasets
+gene_expression <- as.data.frame(gene_expression)
+merged_data <- cbind(gene_info, gene_expression)
+merged_data <- merged_data %>% select(-Probe_ID)
+transposed_data <- t(merged_data)
+transposed_data <- as.data.frame(transposed_data)
+transposed_data$RowID <- row.names(transposed_data)
+
+# Prepare sample information dataframe
+new_rows <- data.frame(
+  X = rep(NA, 3),
+  X.1 = rep(NA, 3),
+  X.2 = rep(NA, 3),
+  X.3 = rep(NA, 3),
+  X.4 = rep(NA, 3)
+)
+sample_info_updated <- rbind(new_rows, sample_info)
+sample_info_updated$RowID <- transposed_data$RowID
+sample_info_updated <- sample_info_updated %>% select(-c(X, X.3, X.4))
+
+# Merge sample information with transposed data
+merged_data <- merge(sample_info_updated, transposed_data, by = "RowID")
+new_order <- c(2, 3, 1:ncol(merged_data))
+merged_data <- merged_data[, new_order]
+merged_data <- merged_data %>% select(-c(X.1.1, X.2.1))
+merged_data$X.1 <- factor(merged_data$X.1, levels = c("tumor", "normal"))
+merged_data <- merged_data[order(merged_data$X.1), ]
+
+# Split data into tumor and normal dataframes
+tumor_data <- t(merged_data)
+tumor_data <- as.data.frame(tumor_data)
+tumor_data <- subset(tumor_data, select = -c(10:18))
+
+normal_data <- t(merged_data)
+normal_data <- as.data.frame(normal_data)
+normal_data <- subset(normal_data, select = -c(1:9))
+
+# Calculate average gene expression for tumor and normal dataframes
+tumor_data <- tumor_data %>% select(13, 12, 11, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+normal_data <- normal_data %>% select(13, 12, 11, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+included_columns_tumor <- (5:ncol(tumor_data))
+included_rows_tumor <- (4:nrow(tumor_data))
+tumor_data[, included_columns_tumor] <- lapply(tumor_data[, included_columns_tumor], function(x) {
+  if (is.factor(x) || is.character(x)) as.numeric(as.character(x)) else x
+})
+tumor_averages <- rowMeans(tumor_data[included_rows_tumor, included_columns_tumor], na.rm = TRUE)
+tumor_data$tumoraverage <- NA
+tumor_data$tumoraverage[included_rows_tumor] <- tumor_averages
+
+included_columns_normal <- (5:ncol(normal_data))
+included_rows_normal <- (4:nrow(normal_data))
+normal_data[, included_columns_normal] <- lapply(normal_data[, included_columns_normal], function(x) {
+  if (is.factor(x) || is.character(x)) as.numeric(as.character(x)) else x
+})
+normal_averages <- rowMeans(normal_data[included_rows_normal, included_columns_normal], na.rm = TRUE)
+normal_data$normalaverage <- NA
+normal_data$normalaverage[included_rows_normal] <- normal_averages
+
+# Compute log2 fold change for each gene
+calculation_data <- tumor_data
+calculation_data$tumoraverage <- tumor_data$tumoraverage
+calculation_data$normalaverage <- normal_data$normalaverage
+calculation_data <- calculation_data %>% select(-c(5, 6, 7, 8, 9, 10, 11, 12, 13))
+calculation_data$foldchange <- NA
+fold_change <- log2((calculation_data$tumoraverage - calculation_data$normalaverage) / calculation_data$normalaverage)
+calculation_data$foldchange <- fold_change
+
+# Identify genes with fold change greater than 5
+calculation_data$greater_than_5 <- NA
+greater_than_5 <- abs(calculation_data$foldchange) > 5
+calculation_data$greater_than_5 <- greater_than_5
+
+# Identify genes with higher expression in Tumor or Normal
+calculation_data$comparison <- NA
+calculation_data$tumoraverage <- as.numeric(calculation_data$tumoraverage)
+calculation_data$normalaverage <- as.numeric(calculation_data$normalaverage)
+calculation_data$comparison <- ifelse(calculation_data$tumoraverage > calculation_data$normalaverage, "Tumor",
+                                      ifelse(calculation_data$tumoraverage < calculation_data$normalaverage, "Normal", "Equal"))
+
+# Explore the data
+str(calculation_data)
+summary(calculation_data)
+
+# Create a histogram showing the distribution of differentially expressed genes (DEGs) by chromosome
+chromosome_counts <- table(calculation_data[["1"]])
+chromosome_counts <- as.data.frame(chromosome_counts)
+chromosome_counts$Freq <- as.numeric(chromosome_counts$Freq)
+hist(chromosome_counts$Var1,
+     main = "Histogram of DEGs",
+     xlab = "Var1",
+     breaks = max(chromosome_counts$Var1) - min(chromosome_counts$Var1),
+     col = "darkgreen",
+     border = "black")
+
+# Create another histogram with distribution segregated by Tumor vs Normal
+chromosome_counts_comparison <- table(calculation_data[["1"]], calculation_data$comparison)
+chromosome_counts_comparison <- as.data.frame(chromosome_counts_comparison)
+chromosome_counts_comparison$Freq <- as.numeric(chromosome_counts_comparison$Var1)
+ggplot(chromosome_counts_comparison, aes(x = Var1, y = Freq, fill = Var2)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  labs(title = "Distribution of Chromosome Counts by Sample Type",
+       x = "Chromosome",
+       y = "Count",
+       fill = "Sample Type")
+
+# Create a bar chart of genes that are upregulated and downregulated in Tumor Samples
+percentages <- calculation_data %>%
+  group_by(comparison) %>%
+  summarise(Count = n()) %>%
+  mutate(Percentage = (Count / sum(Count)) * 100)
+bar <- barplot(percentages,
+                main = "Percentages of DEGs Upregulated and Downregulated in Tumor Samples",
+                ylab = "Percentage (%)",
+                xlab = "Regulation Type",
+                col = c("darkgreen", "gold"))
+print(bar)
+
+# Use the raw data to create a heatmap visualizing gene
+heatmap(expression_matrix, Rowv = TRUE, Colv = TRUE, col = terrain.colors(256), scale = "row")
+
+# Counting differentially expressed genes (DEGs) by chromosome presents challenges due to numerical chromosome labels. Roughly half of the genes show increased expression, while the other half show decreased expression in tumor compared to normal samples.
